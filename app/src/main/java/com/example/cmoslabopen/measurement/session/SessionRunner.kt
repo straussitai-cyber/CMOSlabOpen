@@ -259,13 +259,12 @@ class SessionRunner(
                     OutputMode.DNG -> {
                         val chars = characteristics[cameraId]
                             ?: error("Missing CameraCharacteristics for $cameraId")
-                        dngSaver.save(
+                        dngSaver.saveDng(
                             image = image,
-                            captureResult = captureResult,
                             characteristics = chars,
+                            result = captureResult,
                             cameraId = cameraId,
-                            frameIndex = frameIndex,
-                        )
+                        ).getOrThrow()
                     }
 
                     OutputMode.HISTOGRAM -> {
