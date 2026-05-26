@@ -7,7 +7,7 @@ import android.hardware.camera2.TotalCaptureResult
 import android.media.Image
 import android.os.SystemClock
 import com.example.cmoslabopen.measurement.camera.CameraController
-import com.example.cmoslabopen.measurement.camera.ImageProcessor
+import com.example.cmoslabopen.measurement.camera.HistogramCalculator
 import com.example.cmoslabopen.measurement.storage.DngSaver
 import com.example.cmoslabopen.measurement.storage.HistogramSaver
 import com.example.cmoslabopen.measurement.storage.MetadataWriter
@@ -268,17 +268,18 @@ class SessionRunner(
                     }
 
                     OutputMode.HISTOGRAM -> {
-                        val (blackLevel, whiteLevel) = readBlackWhite(cameraId)
-                        val histogram = ImageProcessor.computeRawHistogram(
+                        val chars = characteristics[cameraId]
+                            ?: error("Missing CameraCharacteristics for $cameraId")
+                        val histogram = HistogramCalculator.compute(
                             image = image,
-                            blackLevel = blackLevel,
-                            whiteLevel = whiteLevel,
+                            characteristics = chars,
+                            result = captureResult,
                         )
-                        histogramSaver.save(
+                        histogramSaver.saveHistogram(
                             histogram = histogram,
                             cameraId = cameraId,
-                            frameIndex = frameIndex,
-                        )
+                            tsNanos = image.timestamp,
+                        ).getOrThrow()
                     }
                 }
 
@@ -302,16 +303,5 @@ class SessionRunner(
                 slots.release()
             }
         }
-    }
-
-    private fun readBlackWhite(cameraId: String): Pair<Int, Int> {
-        val chars = characteristics[cameraId]
-        val whiteLevel = chars
-            ?.get(CameraCharacteristics.SENSOR_INFO_WHITE_LEVEL)
-            ?: 0
-        val pattern = chars
-            ?.get(CameraCharacteristics.SENSOR_BLACK_LEVEL_PATTERN)
-        val blackLevel = pattern?.getOffsetForIndex(0, 0) ?: 0
-        return blackLevel to whiteLevel
     }
 }

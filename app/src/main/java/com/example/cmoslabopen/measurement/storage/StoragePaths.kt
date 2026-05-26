@@ -32,4 +32,10 @@ object StoragePaths {
      */
     fun yuvFile(context: Context, sessionId: String, cameraId: String, tsNanos: Long): File =
         File(sessionDirectory(context, sessionId), "${cameraId}_${tsNanos}.yuv")
+
+    fun histJsonFile(context: Context, sessionId: String, cameraId: String, tsNanos: Long): File =
+        File(sessionDirectory(context, sessionId), "${cameraId}_${tsNanos}_hist.json")
+
+    fun histBinFile(context: Context, sessionId: String, cameraId: String, tsNanos: Long): File =
+        File(sessionDirectory(context, sessionId), "${cameraId}_${tsNanos}_hist.bin")
 }
