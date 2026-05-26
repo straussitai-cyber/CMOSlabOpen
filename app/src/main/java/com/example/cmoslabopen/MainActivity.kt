@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,7 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.example.cmoslabopen.measurement.ui.MainScreen
+import com.example.cmoslabopen.measurement.ui.MeasurementNavHost
 import com.example.cmoslabopen.measurement.ui.theme.CMOSlabOpenTheme
 
 class MainActivity : ComponentActivity() {
@@ -35,18 +34,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             CMOSlabOpenTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    CameraPermissionGate(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding),
-                    ) {
-                        MainScreen(
-                            onStartNewSession = {
-                                // Wired up in Phase 11 when navigation is added.
-                            },
-                        )
-                    }
+                CameraPermissionGate {
+                    MeasurementNavHost()
                 }
             }
         }
@@ -55,7 +44,6 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun CameraPermissionGate(
-    modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
@@ -65,7 +53,7 @@ private fun CameraPermissionGate(
             ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.CAMERA,
-            ) == PackageManager.PERMISSION_GRANTED
+            ) == PackageManager.PERMISSION_GRANTED,
         )
     }
 
@@ -84,26 +72,20 @@ private fun CameraPermissionGate(
     if (hasCameraPermission) {
         content()
     } else {
-        CameraPermissionRequest(
-            modifier = modifier,
-            onRequest = { launcher.launch(Manifest.permission.CAMERA) },
-        )
-    }
-}
-
-@Composable
-private fun CameraPermissionRequest(
-    modifier: Modifier = Modifier,
-    onRequest: () -> Unit,
-) {
-    Column(
-        modifier = modifier.padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(text = "CMOSlabOpen needs camera access to capture measurements.")
-        Button(onClick = onRequest, modifier = Modifier.padding(top = 16.dp)) {
-            Text(text = "Grant camera permission")
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("CMOSlabOpen needs camera access to capture measurements.")
+            Button(
+                onClick = { launcher.launch(Manifest.permission.CAMERA) },
+                modifier = Modifier.padding(top = 16.dp),
+            ) {
+                Text("Grant camera permission")
+            }
         }
     }
 }

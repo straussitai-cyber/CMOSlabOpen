@@ -4,54 +4,76 @@ import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.googlefonts.Font
 import androidx.compose.ui.text.googlefonts.GoogleFont
 import androidx.compose.ui.unit.sp
 import com.example.cmoslabopen.R
 
-/**
- * Downloadable-fonts provider for Google Fonts. The matching
- * `com_google_android_gms_fonts_certs` string-array resource must exist
- * (see res/values/font_certs.xml) before [JetBrainsMonoFontFamily] can be
- * resolved at runtime.
- */
 internal val GoogleFontProvider: GoogleFont.Provider = GoogleFont.Provider(
     providerAuthority = "com.google.android.gms.fonts",
     providerPackage = "com.google.android.gms",
     certificates = R.array.com_google_android_gms_fonts_certs,
 )
 
-internal val JetBrainsMono: GoogleFont = GoogleFont(name = "JetBrains Mono")
+internal val JetBrainsMonoFontFamily: FontFamily = FontFamily(
+    Font(
+        googleFont = GoogleFont("JetBrains Mono"),
+        fontProvider = GoogleFontProvider,
+    ),
+)
 
-/**
- * Family for JetBrains Mono once downloadable-font resolution is wired up.
- * Until then the rest of the typography falls back to [FontFamily.Monospace]
- * so the app still renders.
- */
-internal val JetBrainsMonoFontFamily: FontFamily = FontFamily.Monospace
+/** Large numeric readouts (timers, counters). */
+val NumericReadoutStyle = TextStyle(
+    fontFamily = JetBrainsMonoFontFamily,
+    fontWeight = FontWeight.Normal,
+    fontSize = 32.sp,
+    lineHeight = 40.sp,
+    letterSpacing = 0.sp,
+)
+
+/** Medium numeric values. */
+val NumericMediumStyle = TextStyle(
+    fontFamily = JetBrainsMonoFontFamily,
+    fontWeight = FontWeight.Normal,
+    fontSize = 20.sp,
+    lineHeight = 28.sp,
+)
 
 internal val AppTypography: Typography = Typography(
     bodyLarge = TextStyle(
-        fontFamily = JetBrainsMonoFontFamily,
+        fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,
         fontSize = 16.sp,
         lineHeight = 24.sp,
     ),
     bodyMedium = TextStyle(
-        fontFamily = JetBrainsMonoFontFamily,
+        fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
         lineHeight = 20.sp,
     ),
+    bodySmall = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+    ),
     titleLarge = TextStyle(
-        fontFamily = JetBrainsMonoFontFamily,
+        fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Medium,
         fontSize = 22.sp,
         lineHeight = 28.sp,
     ),
     labelLarge = TextStyle(
-        fontFamily = JetBrainsMonoFontFamily,
+        fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Medium,
         fontSize = 14.sp,
         lineHeight = 20.sp,
+    ),
+    labelMedium = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Medium,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
     ),
 )
