@@ -1,22 +1,23 @@
 package com.example.cmoslabopen.measurement.session
 
+import java.util.UUID
+
 /**
- * Immutable description of one measurement session: which cameras to use,
- * what manual exposure / ISO settings to step through, how many frames per
- * setting, etc. Serialised into the session folder by [MetadataWriter].
+ * Immutable description of one measurement session. Serialised into the session
+ * folder by [com.example.cmoslabopen.measurement.storage.MetadataWriter].
  */
 data class SessionConfig(
-    val sessionId: String,
-    val cameraIds: List<String>,
-    val exposureTimesNanos: List<Long>,
-    val sensitivitiesIso: List<Int>,
-    val framesPerSetting: Int,
-    val saveDng: Boolean,
-    val saveHistogram: Boolean,
-) {
-    companion object {
-        fun default(): SessionConfig {
-            TODO("Phase 5: provide sensible default configuration")
-        }
-    }
+    val selectedCameraIds: List<String>,
+    val outputMode: OutputMode,
+    val exposureTimeNanos: Long,
+    val iso: Int,
+    val measurementDurationSeconds: Int,
+    val captureIntervalSeconds: Float,
+    val sessionId: String = UUID.randomUUID().toString(),
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+enum class OutputMode {
+    DNG,
+    HISTOGRAM,
 }

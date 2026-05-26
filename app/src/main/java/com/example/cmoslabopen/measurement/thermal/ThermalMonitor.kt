@@ -20,4 +20,13 @@ class ThermalMonitor(private val context: Context) {
     fun currentLevel(): Level {
         TODO("Phase 10: read PowerManager.currentThermalStatus")
     }
+
+    /**
+     * Best-effort sensor / SoC temperature reading in Celsius.
+     * Returns null when the platform exposes no usable signal.
+     * Consumed by [com.example.cmoslabopen.measurement.session.SessionRunner].
+     */
+    fun readTemperatureCelsius(): Float? {
+        TODO("Phase 10: derive from PowerManager.getThermalHeadroom or HardwarePropertiesManager")
+    }
 }
