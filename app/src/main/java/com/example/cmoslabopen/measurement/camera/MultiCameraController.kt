@@ -5,6 +5,7 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.TotalCaptureResult
 import android.media.Image
+import android.util.Size
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -73,6 +74,15 @@ class MultiCameraController(private val context: Context) {
         require(cameraInfos.isNotEmpty()) { "openAll requires at least one camera" }
         closeAll()
 
+        // Concurrent camera operation is restricted to the documented mandatory
+        // concurrent stream combinations: YUV_420_888 at <= 1280x720 per camera.
+        // Using full-resolution RAW or YUV on multiple cameras causes capture
+        // to fail at runtime with CaptureFailure.REASON_ERROR even when session
+        // configuration succeeds. Force-clamp here when more than one camera is
+        // opened together.
+        val isConcurrent = cameraInfos.size > 1
+        val concurrentMaxSize = if (isConcurrent) CONCURRENT_MAX_SIZE else null
+
         val opened = ConcurrentHashMap<String, CameraController>()
         try {
             coroutineScope {
@@ -85,6 +95,8 @@ class MultiCameraController(private val context: Context) {
                                 cameraInfo = info,
                                 exposureNanos = exposureNanos,
                                 iso = iso,
+                                forceYuv = isConcurrent,
+                                maxSize = concurrentMaxSize,
                             )
                             opened[info.id] = controller
                         } catch (t: Throwable) {
@@ -139,5 +151,14 @@ class MultiCameraController(private val context: Context) {
         _controllers.values.forEach { runCatching { it.closeCamera() } }
         _controllers.clear()
         _characteristics.clear()
+    }
+
+    companion object {
+        /**
+         * Per-camera stream cap for concurrent operation, per the Camera2
+         * mandatory concurrent stream combinations table. 720p YUV is the
+         * universally supported safe size.
+         */
+        private val CONCURRENT_MAX_SIZE = Size(1280, 720)
     }
 }

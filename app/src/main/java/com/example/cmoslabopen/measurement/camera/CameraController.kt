@@ -116,6 +116,8 @@ class CameraController {
         cameraInfo: CameraEnumerator.CameraInfo,
         exposureNanos: Long,
         iso: Int,
+        forceYuv: Boolean = false,
+        maxSize: Size? = null,
     ) {
         clearError()
         val device = cameraDevice
@@ -134,15 +136,13 @@ class CameraController {
         this.exposureNanos = exposureNanos
         this.iso = iso
 
-        val format: Int
-        val size: Size
-        if (cameraInfo.supportsRaw) {
-            format = ImageFormat.RAW_SENSOR
-            size = cameraInfo.rawSizes.maxByArea()
-        } else {
-            format = ImageFormat.YUV_420_888
-            size = cameraInfo.yuvSizes.maxByArea()
-        }
+        // Concurrent multi-camera sessions must conform to the mandatory concurrent
+        // stream combinations documented by Camera2 (typically YUV_420_888 at
+        // <= 1280x720 per camera). Callers signal that with `forceYuv` / `maxSize`.
+        val useRaw = cameraInfo.supportsRaw && !forceYuv
+        val format = if (useRaw) ImageFormat.RAW_SENSOR else ImageFormat.YUV_420_888
+        val candidates = if (useRaw) cameraInfo.rawSizes else cameraInfo.yuvSizes
+        val size = selectOutputSize(candidates, maxSize)
         outputFormat = format
         outputSize = size
 
@@ -408,3 +408,17 @@ class CameraException(val cameraError: CameraError) : Exception(cameraError.mess
 
 private fun List<Size>.maxByArea(): Size =
     maxBy { it.width.toLong() * it.height }
+
+/**
+ * Picks the largest size in [candidates] whose width AND height fit within
+ * [maxSize]. Falls back to the overall largest if no candidate satisfies the
+ * constraint (e.g. all sensor RAW sizes exceed the concurrent cap).
+ */
+private fun selectOutputSize(candidates: List<Size>, maxSize: Size?): Size {
+    require(candidates.isNotEmpty()) { "No output sizes available" }
+    if (maxSize == null) return candidates.maxByArea()
+    val filtered = candidates.filter {
+        it.width <= maxSize.width && it.height <= maxSize.height
+    }
+    return if (filtered.isNotEmpty()) filtered.maxByArea() else candidates.maxByArea()
+}

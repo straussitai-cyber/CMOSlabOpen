@@ -27,10 +27,23 @@ fun SessionDoneScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        val title = when {
+            state.errorMessage != null -> "Session failed"
+            state.wasCancelled -> "Session aborted"
+            else -> "Session complete"
+        }
         Text(
-            text = if (state.wasCancelled) "Session aborted" else "Session complete",
+            text = title,
             style = MaterialTheme.typography.titleLarge,
         )
+
+        state.errorMessage?.let { msg ->
+            Text(
+                text = msg,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
 
         SummaryRow("Session ID", state.sessionId)
         SummaryRow("Captures", state.totalCaptures.toString())
@@ -45,6 +58,8 @@ fun SessionDoneScreen(
         SummaryRow("Min", formatTemp(state.temperatureMin))
         SummaryRow("Max", formatTemp(state.temperatureMax))
         SummaryRow("Mean", formatTemp(state.temperatureMean))
+
+        SummaryRow("Path", state.sessionDir.absolutePath)
 
         OutlinedButton(
             onClick = onOpenSessionFolder,

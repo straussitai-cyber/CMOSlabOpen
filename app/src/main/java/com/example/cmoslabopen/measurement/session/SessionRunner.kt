@@ -138,9 +138,12 @@ class SessionRunner(
             }
         }
 
+        // User-initiated cancellation takes priority over capture/processing
+        // failures so the UI flows to the "Cancelled" terminal state even when
+        // the camera was failing at the moment the abort signal arrived.
         val terminal = when {
-            failure != null -> Progress.Failed(failure)
             stopRequested -> Progress.Cancelled
+            failure != null -> Progress.Failed(failure)
             else -> Progress.Done
         }
         _progress.tryEmit(terminal)

@@ -61,6 +61,7 @@ data class DoneSessionUi(
     val temperatureMean: Float?,
     val sessionDir: File,
     val wasCancelled: Boolean = false,
+    val errorMessage: String? = null,
 )
 
 data class MainUiState(
@@ -312,12 +313,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            is SessionRunner.Progress.Failed -> {
-                _uiState.update {
-                    it.copy(errorMessage = progress.cause.message ?: "Capture failed")
-                }
-            }
-
+            is SessionRunner.Progress.Failed,
             SessionRunner.Progress.Cancelled,
             SessionRunner.Progress.Done,
             -> {
@@ -326,11 +322,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val durationSec = ((System.currentTimeMillis() - sessionStartMillis) / 1000L)
                     .toInt()
                 val wasCancelled = progress is SessionRunner.Progress.Cancelled
+                val failureMessage = (progress as? SessionRunner.Progress.Failed)
+                    ?.cause?.message ?: (progress as? SessionRunner.Progress.Failed)
+                    ?.cause?.javaClass?.simpleName
 
                 _uiState.update {
                     it.copy(
                         route = NavRoutes.SESSION_DONE,
                         activeSession = null,
+                        showAbortDialog = false,
                         doneSession = DoneSessionUi(
                             sessionId = config.sessionId,
                             totalCaptures = summary?.summary?.captureCount?.toInt()
@@ -346,6 +346,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             temperatureMean = summary?.summary?.temperatureMean,
                             sessionDir = sessionDir,
                             wasCancelled = wasCancelled,
+                            errorMessage = failureMessage,
                         ),
                     )
                 }
