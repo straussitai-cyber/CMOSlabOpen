@@ -195,16 +195,19 @@ class CameraController {
             ?: throw CameraException(CameraError.NotOpen("captureImage"))
 
         return suspendCancellableCoroutine { cont ->
-            cont.invokeOnCancellation {
-                // Caller cancelled before completion; image may still arrive — discard in sync.
-            }
-
             val sync = CaptureSync(cont)
 
             reader.setOnImageAvailableListener({ r ->
                 val image = r.acquireNextImage() ?: return@setOnImageAvailableListener
                 sync.onImage(image)
             }, bgHandler)
+
+            cont.invokeOnCancellation {
+                // Uninstall the listener so no further ghost images can arrive after
+                // cancellation, then drain any image that landed before we got here.
+                runCatching { reader.setOnImageAvailableListener(null, null) }
+                sync.drain()
+            }
 
             val requestBuilder = session.device.createCaptureRequest(
                 CameraDevice.TEMPLATE_STILL_CAPTURE,
@@ -350,6 +353,13 @@ class CameraController {
         private val resultRef = AtomicReference<TotalCaptureResult?>(null)
 
         fun onImage(image: Image) {
+            if (!cont.isActive) {
+                // Continuation is already done (failed or cancelled); this is a
+                // ghost frame from the HAL — close it immediately so the ImageReader
+                // slot is freed without waiting for a result that will never arrive.
+                runCatching { image.close() }
+                return
+            }
             imageRef.set(image)
             tryComplete()
         }
@@ -366,6 +376,14 @@ class CameraController {
             }
         }
 
+        /**
+         * Closes any image sitting in [imageRef] that will never be paired with
+         * a result (called from [cont.invokeOnCancellation]).
+         */
+        fun drain() {
+            imageRef.getAndSet(null)?.runCatching { close() }
+        }
+
         private fun tryComplete() {
             val image = imageRef.get() ?: return
             val result = resultRef.get() ?: return
@@ -373,6 +391,12 @@ class CameraController {
                 imageRef.set(null)
                 resultRef.set(null)
                 cont.resume(image to result)
+            } else {
+                // Continuation completed between onImage's isActive check and here
+                // (tight race with onFailure / cancellation). Close the orphan.
+                if (imageRef.compareAndSet(image, null)) {
+                    runCatching { image.close() }
+                }
             }
         }
     }

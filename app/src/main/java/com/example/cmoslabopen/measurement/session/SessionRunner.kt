@@ -195,7 +195,9 @@ class SessionRunner(
                 val temperatureResult = runCatching {
                     thermalMonitor.readTemperatureCelsius()
                 }
-                val temperatureC = temperatureResult.getOrElse { 0f }
+                // NaN is the failure sentinel — 0f is a valid temperature (0 °C) and
+                // would silently bias min/mean in the manifest summary.
+                val temperatureC = temperatureResult.getOrElse { Float.NaN }
                 val temperatureSource = if (temperatureResult.isSuccess) {
                     thermalMonitor.temperatureSource
                 } else {

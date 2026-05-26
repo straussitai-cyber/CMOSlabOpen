@@ -53,6 +53,8 @@ class MetadataWriter(private val sessionDir: File) {
     private var temperatureMin: Float? = null
     private var temperatureMax: Float? = null
     private var temperatureSum = 0.0
+    // Counts only frames where a valid (non-NaN) temperature was recorded.
+    private var temperatureReadingCount = 0
 
     /**
      * Opens `session_manifest.json`, writes the session header, and starts the
@@ -66,6 +68,7 @@ class MetadataWriter(private val sessionDir: File) {
         temperatureMin = null
         temperatureMax = null
         temperatureSum = 0.0
+        temperatureReadingCount = 0
 
         val jw = JsonWriter(
             OutputStreamWriter(manifestFile.outputStream(), StandardCharsets.UTF_8),
@@ -96,9 +99,14 @@ class MetadataWriter(private val sessionDir: File) {
                 jw.flush()
                 // Only this coroutine mutates stats; no synchronisation needed.
                 captureCount++
-                temperatureMin = minOfNullable(temperatureMin, metadata.temperatureCelsius)
-                temperatureMax = maxOfNullable(temperatureMax, metadata.temperatureCelsius)
-                temperatureSum += metadata.temperatureCelsius
+                // NaN means the sensor read failed for this frame; skip it so a
+                // single bad reading does not bias min/max/mean statistics.
+                if (!metadata.temperatureCelsius.isNaN()) {
+                    temperatureMin = minOfNullable(temperatureMin, metadata.temperatureCelsius)
+                    temperatureMax = maxOfNullable(temperatureMax, metadata.temperatureCelsius)
+                    temperatureSum += metadata.temperatureCelsius
+                    temperatureReadingCount++
+                }
             }
         }
 
@@ -139,7 +147,7 @@ class MetadataWriter(private val sessionDir: File) {
             writeNullableFloat(
                 jw,
                 "temperatureMean",
-                if (captureCount > 0) (temperatureSum / captureCount).toFloat() else null,
+                if (temperatureReadingCount > 0) (temperatureSum / temperatureReadingCount).toFloat() else null,
             )
             jw.endObject()
             jw.endObject()
