@@ -4,6 +4,7 @@ package com.example.cmoslabopen.measurement.session
 
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.TotalCaptureResult
+import android.graphics.ImageFormat
 import android.media.Image
 import android.os.SystemClock
 import com.example.cmoslabopen.measurement.camera.CameraController
@@ -43,16 +44,21 @@ import kotlin.math.roundToLong
  *    No file IO, no DNG encoding, no histogram math ever runs on this path.
  * 2. As soon as each [Image] is acquired, it is handed off to a dedicated
  *    processing scope backed by `Dispatchers.Default.limitedParallelism(N)`
- *    (a separate SupervisorJob). That coroutine performs the heavy work
- *    (DNG / histogram / metadata write) and is the sole owner of `image.close()`.
+ *    (a separate SupervisorJob). That coroutine performs heavy work (DNG / histogram)
+ *    and owns `image.close()`.
  * 3. The capture loop applies *backpressure* via a [Semaphore] sized to
  *    `cameraCount * 2`. The orchestration must acquire one permit per camera
  *    before issuing the next batch; each processing job releases its permit
- *    in `finally`. With `ImageReader.maxImages = 3` per controller this
- *    guarantees the camera always has at least one free slot.
+ *    immediately after `image.close()` — before metadata is queued.
+ *    With `ImageReader.maxImages = 3` per controller this guarantees the camera
+ *    always has at least one free slot.
  * 4. Strict timing uses absolute deadlines built from
  *    [SystemClock.elapsedRealtimeNanos] — drift never accumulates.
- * 5. [cancel] sets a flag; the loop exits at the next safe boundary, in-flight
+ * 5. Metadata writing is fully decoupled: [MetadataWriter.appendFrame] is a
+ *    non-suspending enqueue; a dedicated IO coroutine inside [MetadataWriter]
+ *    serialises the actual disk writes. The processing job never suspends on
+ *    metadata IO.
+ * 6. [cancel] sets a flag; the loop exits at the next safe boundary, in-flight
  *    processing is allowed to drain, and the session ends with
  *    [Progress.Cancelled] (never [Progress.Failed]).
  *
@@ -183,9 +189,16 @@ class SessionRunner(
             try {
                 if (stopRequested) break
 
-                val temperatureC = runCatching {
+                val temperatureResult = runCatching {
                     thermalMonitor.readTemperatureCelsius()
-                }.getOrNull()
+                }
+                val temperatureC = temperatureResult.getOrElse { 0f }
+                val temperatureSource = if (temperatureResult.isSuccess) {
+                    thermalMonitor.temperatureSource
+                } else {
+                    "UNAVAILABLE"
+                }
+                val thermalStatus = thermalMonitor.thermalStatus.value
 
                 val deferreds = controllers.entries.map { (cameraId, controller) ->
                     async {
@@ -219,7 +232,10 @@ class SessionRunner(
                         image = image,
                         captureResult = captureResult,
                         frameIndex = i,
-                        sensorTemperatureC = temperatureC,
+                        systemTimeMillis = System.currentTimeMillis(),
+                        temperatureCelsius = temperatureC,
+                        thermalStatus = thermalStatus,
+                        temperatureSource = temperatureSource,
                     )
                     unconsumedPermits--
                 }
@@ -242,7 +258,14 @@ class SessionRunner(
     /**
      * Hands a single (image, result) pair off to the processing scope.
      * Returns immediately; the caller never blocks on processing.
-     * The processing job is the sole owner of [Image.close] for this image.
+     *
+     * Critical ordering inside the launched coroutine:
+     * 1. Pixel-level work (DNG encode / histogram compute) reads from [image].
+     * 2. [ImageMetadata] is built while [image] is still open (reads dimensions/timestamp).
+     * 3. [image.close] and [Semaphore.release] happen immediately — the ImageReader
+     *    slot and the backpressure permit are freed before any metadata is queued.
+     * 4. [MetadataWriter.appendFrame] enqueues the metadata and returns instantly;
+     *    actual disk IO is handled by MetadataWriter's dedicated IO coroutine.
      */
     private fun dispatchProcessing(
         scope: CoroutineScope,
@@ -251,56 +274,84 @@ class SessionRunner(
         image: Image,
         captureResult: TotalCaptureResult,
         frameIndex: Int,
-        sensorTemperatureC: Float?,
+        systemTimeMillis: Long,
+        temperatureCelsius: Float,
+        thermalStatus: Int,
+        temperatureSource: String,
     ) {
         scope.launch {
+            // Track whether we already released the image / semaphore on the happy path,
+            // so the finally block does not double-release.
+            var resourcesReleased = false
             try {
+                val chars = characteristics[cameraId]
+                    ?: error("Missing CameraCharacteristics for $cameraId")
+                var outputMode = config.outputMode.name
+                var outputFilePath: String? = null
+                var histogram: HistogramCalculator.ImageHistogram? = null
+
                 when (config.outputMode) {
                     OutputMode.DNG -> {
-                        val chars = characteristics[cameraId]
-                            ?: error("Missing CameraCharacteristics for $cameraId")
-                        dngSaver.saveDng(
+                        val outputFile = dngSaver.saveDng(
                             image = image,
                             characteristics = chars,
                             result = captureResult,
                             cameraId = cameraId,
                         ).getOrThrow()
+                        outputMode = if (image.format == ImageFormat.RAW_SENSOR) "DNG" else "YUV"
+                        outputFilePath = metadataWriter.relativePath(outputFile)
                     }
 
                     OutputMode.HISTOGRAM -> {
-                        val chars = characteristics[cameraId]
-                            ?: error("Missing CameraCharacteristics for $cameraId")
-                        val histogram = HistogramCalculator.compute(
+                        histogram = HistogramCalculator.compute(
                             image = image,
                             characteristics = chars,
                             result = captureResult,
                         )
-                        histogramSaver.saveHistogram(
+                        val outputFiles = histogramSaver.saveHistogram(
                             histogram = histogram,
                             cameraId = cameraId,
                             tsNanos = image.timestamp,
                         ).getOrThrow()
+                        outputFilePath = metadataWriter.relativePath(outputFiles.first)
                     }
                 }
 
-                val base = ImageMetadata.fromCaptureResult(
-                    captureResult,
-                    cameraId,
-                    frameIndex,
+                // Build metadata while image is still accessible.
+                val metadata = ImageMetadata.fromCaptureResult(
+                    sessionId = config.sessionId,
+                    cameraId = cameraId,
+                    captureIndex = frameIndex,
+                    result = captureResult,
+                    image = image,
+                    characteristics = chars,
+                    systemTimeMillis = systemTimeMillis,
+                    temperatureCelsius = temperatureCelsius,
+                    thermalStatus = thermalStatus,
+                    temperatureSource = temperatureSource,
+                    outputMode = outputMode,
+                    outputFilePath = outputFilePath,
+                    histogram = histogram,
                 )
-                val metadata = if (sensorTemperatureC != null) {
-                    base.copy(sensorTemperatureC = sensorTemperatureC)
-                } else {
-                    base
-                }
+
+                // Release ImageReader slot and backpressure permit BEFORE metadata IO.
+                runCatching { image.close() }
+                slots.release()
+                resourcesReleased = true
+
+                // Non-blocking: enqueues into MetadataWriter's internal Channel and returns
+                // instantly. The dedicated IO coroutine inside MetadataWriter handles the write.
                 metadataWriter.appendFrame(metadata)
+
             } catch (ce: CancellationException) {
-                // Cancellation never surfaces as a failure; image still closed below.
+                // Cancellation never surfaces as a failure.
             } catch (t: Throwable) {
                 _progress.tryEmit(Progress.Failed(t))
             } finally {
-                runCatching { image.close() }
-                slots.release()
+                if (!resourcesReleased) {
+                    runCatching { image.close() }
+                    slots.release()
+                }
             }
         }
     }
