@@ -1,0 +1,12 @@
+- Kotlin Android app. minSdk 30. targetSdk 33.
+- All camera capture uses the platform Camera2 API directly. Never suggest CameraX.
+- All automatic camera processing (AE, AWB, AF, NR, hot pixel, shading, OIS, video stabilisation)
+  must be explicitly set OFF on every CaptureRequest. Never leave any of these at their default.
+- SENSOR_FRAME_DURATION must always be set to max(minFrameDuration, exposureTimeNanos).
+- File storage uses context.getExternalFilesDir(). No WRITE_EXTERNAL_STORAGE permission.
+- getConcurrentCameraIds() and all API 30 camera APIs can be called unconditionally. No version guards.
+- Coroutines are the preferred async pattern. Wrap Camera2 callbacks with suspendCancellableCoroutine.
+- image.close() must be called immediately after processing; never defer it.
+- RAW histogram normalisation divides by (SENSOR_INFO_WHITE_LEVEL - blackLevel). Never hardcode 65535.
+- No camera preview surfaces anywhere. This is a measurement instrument, not a viewfinder.
+- UI is Jetpack Compose, dark-default, no decorative elements.
