@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.example.cmoslabopen"
-    compileSdk = 33
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.cmoslabopen"

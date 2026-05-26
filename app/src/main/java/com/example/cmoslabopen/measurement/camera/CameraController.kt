@@ -315,7 +315,7 @@ class CameraController {
         val oisModes = characteristics.get(
             CameraCharacteristics.LENS_INFO_AVAILABLE_OPTICAL_STABILIZATION,
         )
-        if (!oisModes.isNullOrEmpty()) {
+        if (oisModes != null && oisModes.isNotEmpty()) {
             builder.set(
                 CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE,
                 CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_OFF,
